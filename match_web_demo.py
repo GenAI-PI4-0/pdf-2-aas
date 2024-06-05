@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 from dotenv import load_dotenv
-import openai
+from ollama import Client
 from langchain_community.document_loaders import PyPDFLoader
 from aas_loader import process_aasx_file, save_aasx, fill_template
 from tqdm import tqdm
@@ -10,12 +10,8 @@ import gradio as gr
 import shutil
 
 
-load_dotenv()
-openai.api_type = "azure"
-openai.api_version = "2023-05-15"
-openai.api_base = os.getenv("AZURE_OPENAI_ENDPOINT")  # Your Azure OpenAI resource's endpoint value.
-openai.api_key = os.getenv("AZURE_OPENAI_API_KEY")
-MODEL_ID = "gpt-4-1106-preview"
+model="llama3"
+base_url=""
 
 
 def process_pdf(pdf_path):
@@ -27,16 +23,20 @@ def process_pdf(pdf_path):
         texts += page
 
     text_instructions = "extract all the technical specification data of a product from the pdf into a list of technical properties in a format of '<property name>, <value>, <unit>' without any explanation or any texts, such as 'Nominal_Voltage, 250, V'. For a missing value, use 'N/A'. Each row must only contain these three elements with two ','. "
-    client = openai.AzureOpenAI(api_version="2023-05-15")
-    response = client.chat.completions.create(
-        model="gpt-4-1106-preview",
+    
+    client = Client(host=base_url)
+
+    response = client.chat(
+        model=model,
         messages=[
             {"role": "system", "content": text_instructions},
             {"role": "user", "content": texts}
         ],
-        temperature=0
+        options={
+        "temperature": 0
+        }
     )
-    technical_data_list = response.choices[0].message.content
+    technical_data_list = response['message']['content']
 
     def adjust_line(parts):
         return parts[:3] + ["N/A"] * (3 - len(parts))  # Adjust list to have exactly 3 elements
@@ -49,22 +49,25 @@ def process_pdf(pdf_path):
 
 ## semantic search
 def LLM_matcher(query, candidates):
-    client = openai.AzureOpenAI(api_version="2023-05-15")
     system_prompt = "You will read two sentence-like entities to be matched. Each entity has several attributes such as descriptions.Your task is to decide whether the two entities are matched (they refer to the same entity). Only answer 'yes' or 'no'."
     CoT_prompt = "Think step by step. First, entities may be professional terminologies in specific domains, you should consider the domain knowledge. Second, the entity names and descriptions or definitions are most important. should consider synonyms. Third, entity1 may be defined for a specific use case or domain, while entity2 may be defined in more general terms. If the scope of Entity1 belongs to that of Entity2, they should be considered matching. However, if the scope of Entity2 belongs to that of Entity1, they should be considered not matching. Below are several examples"
 
+    client = Client(host=base_url)
+
     for candidate in candidates:
-        response = client.chat.completions.create(
-            model="gpt-4-1106-preview", # The deployment name you chose when you deployed the GPT-3.5-Turbo or GPT-4 model.
+        response = client.chat(
+            model=model, # The deployment name you chose when you deployed the GPT-3.5-Turbo or GPT-4 model.
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "system", "content": CoT_prompt},
                 {"role": "user", "content": f"entity1: {query}\nentity2: {candidate}"}
             ],
-            temperature=1
+            options={
+        "temperature": 1
+        }
         )
         print(f"\nentity1: {query}\nentity2: {candidate}")
-        result = response.choices[0].message.content
+        result = response['message']['content']
         if 'yes' in result:
             print("LLM Matching Result: ", candidate)
             return candidate
@@ -113,11 +116,13 @@ def process_files(pdf_file, aasx_file):
             queries_embeddings = pickle.load(f)
         print("Loaded precomputed queries_embeddings.")
     else:
-        from langchain_openai import AzureOpenAIEmbeddings
-        embeddings_model = AzureOpenAIEmbeddings(model="text-embedding-ada-002-2", openai_api_version="2023-05-15",
-                                                 azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-                                                 openai_api_type="azure",
-                                                 openai_api_key=os.getenv("AZURE_OPENAI_API_KEY"))
+        from langchain.embeddings import HuggingFaceEmbeddings
+        embeddings_model = HuggingFaceEmbeddings(
+            #model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_name="/home/niq/projects/chat_with_docs/models/all-MiniLM-L6-v2",
+            model_kwargs={"device": "cpu"},
+        )
+
         queries_embeddings = embeddings_model.embed_documents(queries)
 
         with open(queries_embeddings_file, 'wb') as f:
@@ -130,11 +135,12 @@ def process_files(pdf_file, aasx_file):
             corpus_embeddings = pickle.load(f)
         print("Loaded precomputed eclass_embeddings.")
     else:
-        from langchain_openai import AzureOpenAIEmbeddings
-        embeddings_model = AzureOpenAIEmbeddings(model="text-embedding-ada-002-2", openai_api_version="2023-05-15",
-                                                 azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-                                                 openai_api_type="azure",
-                                                 openai_api_key=os.getenv("AZURE_OPENAI_API_KEY"))
+        from langchain.embeddings import HuggingFaceEmbeddings
+        embeddings_model = HuggingFaceEmbeddings(
+            #model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_name="/home/niq/projects/chat_with_docs/models/all-MiniLM-L6-v2",
+            model_kwargs={"device": "cpu"},
+        )
         corpus_embeddings = embeddings_model.embed_documents(corpus)
 
         with open(aas_embeddings_file, 'wb') as f:
