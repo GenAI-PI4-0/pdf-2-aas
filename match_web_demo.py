@@ -1,8 +1,8 @@
 import pandas as pd
 import os
-from dotenv import load_dotenv
 from ollama import Client
 from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.embeddings.ollama import OllamaEmbeddings
 from aas_loader import process_aasx_file, save_aasx, fill_template
 from tqdm import tqdm
 import pickle
@@ -11,7 +11,7 @@ import shutil
 
 
 model="llama3"
-base_url=""
+base_url="http://127.0.0.1:11434"
 
 
 def process_pdf(pdf_path):
@@ -84,7 +84,13 @@ def process_files(pdf_file, aasx_file):
     pdf_name = pdf_file.name.split("\\")[-1].split(".")[0]
     aas_smt = aasx_file.name.split("\\")[-1].split(".")[0]
 
-    shutil.copy(aasx_path, os.path.join(base_path, aas_smt+'.aasx'))
+    try:
+        shutil.copy(aasx_path, os.path.join(base_path, aas_smt+'.aasx'))
+    except shutil.SameFileError:
+        pass
+    except Exception as e:
+        print("Error copying AASX file: ", e)
+        return None
     aasx_path = os.path.join(base_path, aas_smt+'.aasx')
 
 
@@ -116,14 +122,9 @@ def process_files(pdf_file, aasx_file):
             queries_embeddings = pickle.load(f)
         print("Loaded precomputed queries_embeddings.")
     else:
-        from langchain.embeddings import HuggingFaceEmbeddings
-        embeddings_model = HuggingFaceEmbeddings(
-            #model_name="sentence-transformers/all-MiniLM-L6-v2",
-            model_name="/home/niq/projects/chat_with_docs/models/all-MiniLM-L6-v2",
-            model_kwargs={"device": "cpu"},
-        )
+        ollamaEmbed = OllamaEmbeddings(base_url=base_url, model=model)
 
-        queries_embeddings = embeddings_model.embed_documents(queries)
+        queries_embeddings = ollamaEmbed.embed_documents(queries)
 
         with open(queries_embeddings_file, 'wb') as f:
             pickle.dump(queries_embeddings, f)
@@ -135,13 +136,9 @@ def process_files(pdf_file, aasx_file):
             corpus_embeddings = pickle.load(f)
         print("Loaded precomputed eclass_embeddings.")
     else:
-        from langchain.embeddings import HuggingFaceEmbeddings
-        embeddings_model = HuggingFaceEmbeddings(
-            #model_name="sentence-transformers/all-MiniLM-L6-v2",
-            model_name="/home/niq/projects/chat_with_docs/models/all-MiniLM-L6-v2",
-            model_kwargs={"device": "cpu"},
-        )
-        corpus_embeddings = embeddings_model.embed_documents(corpus)
+        ollamaEmbed = OllamaEmbeddings(base_url=base_url, model=model)
+
+        corpus_embeddings = ollamaEmbed.embed_documents(queries)
 
         with open(aas_embeddings_file, 'wb') as f:
             pickle.dump(corpus_embeddings, f)
