@@ -1,0 +1,14 @@
+pandas
+ollama
+langchain_community
+tqdm
+gradio
+pyecma376_2
+xmltodict
+pandas
+sentence-transformers
+torch
+tqdm
+joblib
+scikit-learn
+pypdf
