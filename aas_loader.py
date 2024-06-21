@@ -9,7 +9,6 @@ import time
 import joblib
 from sklearn.metrics import precision_score, recall_score, f1_score
 import zipfile
-import xmltodict
 import glob
 import shutil
 """
