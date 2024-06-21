@@ -1,0 +1,8 @@
+venv
+extracted_aasx
+flagged
+
+__pycache__
+
+
+.DS_Store
